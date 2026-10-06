@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --color-darkbg: #252525;
+  --color-cardbg: #1e1e1e;
+  --color-cardborder: #333333;
+  --color-textmain: #e0e0e0;
+  --color-subtext: #888888;
+}
+
+body {
+  background-color: var(--color-darkbg);
+  color: var(--color-textmain);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  overflow: hidden;
+}
