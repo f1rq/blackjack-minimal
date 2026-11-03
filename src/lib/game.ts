@@ -44,13 +44,13 @@ export const ALL_CHIPS: ChipOption[] = [
 export function createDeck(): Card[] {
   const deck: Card[] = [];
   for (let d = 0; d < 4; d++) {
-  for (const suit of SUITS) {
-    for (const value of VALUES) {
-      deck.push({ suit, value });
+    for (const suit of SUITS) {
+      for (const value of VALUES) {
+        deck.push({ suit, value });
       }
     }
   }
-
+  
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];

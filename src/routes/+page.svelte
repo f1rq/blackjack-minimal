@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly, fade, scale } from 'svelte/transition';
+  import { fly, scale } from 'svelte/transition';
   import { backOut } from 'svelte/easing';
 
   import { 
@@ -8,6 +8,7 @@
     isRedSuit, 
     formatMoney, 
     ALL_CHIPS, 
+    delay,
     type Card, 
     type GameState 
   } from '../lib/game';
@@ -20,6 +21,8 @@
   let highScore = $state(1000);
   let currentBet = $state(0);
   let gameState = $state<GameState>('betting');
+  
+  let isProcessing = $state(false);
 
   let playerScore = $derived(calculateHandScore(playerHand));
   let dealerScore = $derived(calculateHandScore(dealerHand));
@@ -35,7 +38,7 @@
   );
 
   function addChip(amount: number) {
-    if (gameState !== 'betting') return;
+    if (gameState !== 'betting' || isProcessing) return;
     if (bankroll >= amount) {
       bankroll -= amount;
       currentBet += amount;
@@ -43,13 +46,14 @@
   }
 
   function clearBet() {
-    if (gameState !== 'betting') return;
+    if (gameState !== 'betting' || isProcessing) return;
     bankroll += currentBet;
     currentBet = 0;
   }
 
-  function startRound() {
-    if (currentBet <= 0) return;
+  async function startRound() {
+    if (currentBet <= 0 || isProcessing) return;
+    isProcessing = true;
 
     deck = createDeck();
     playerHand = [deck.pop()!, deck.pop()!];
@@ -57,7 +61,9 @@
     gameState = 'playing';
 
     if (calculateHandScore(playerHand) === 21) {
+      await delay(300);
       dealerHand[1].hidden = false;
+      dealerHand = [...dealerHand];
       
       if (calculateHandScore(dealerHand) === 21) {
         gameState = 'push';
@@ -68,10 +74,13 @@
       }
       updateHighScore();
     }
+    
+    isProcessing = false;
   }
 
-  function hit() {
-    if (gameState !== 'playing') return;
+  async function hit() {
+    if (gameState !== 'playing' || isProcessing) return;
+    isProcessing = true;
 
     const newHand = [...playerHand, deck.pop()!];
     playerHand = newHand;
@@ -80,26 +89,34 @@
 
     if (currentScore > 21) {
       gameState = 'playerBust';
-    } else if (currentScore === 21) {
-      // Trafienie 21 przy hicie -> automatyczny pas i rozstrzygnięcie
-      stand();
+      isProcessing = false;
+    } else if (currentScore === 21) {  
+      await stand(true);
+    } else {
+      isProcessing = false;
     }
   }
 
-  function stand() {
-    if (gameState !== 'playing') return;
+  async function stand(force = false) {
+    if (gameState !== 'playing' && !force) return;
+    if (isProcessing && !force) return;
+    
+    isProcessing = true;
     gameState = 'dealerTurn';
+    
     dealerHand[1].hidden = false;
+    dealerHand = [...dealerHand];
 
-    const dealerInterval = setInterval(() => {
-      if (calculateHandScore(dealerHand) < 17) {
-        dealerHand.push(deck.pop()!);
-      } else {
-        clearInterval(dealerInterval);
-        resolveWinner();
-      }
-    }, 400);
-  }
+    await delay(400);
+
+    while (calculateHandScore(dealerHand) < 17) {
+      dealerHand = [...dealerHand, deck.pop()!];
+      await delay(400);
+    }
+
+    resolveWinner();
+    isProcessing = false;
+    }
 
   function resolveWinner() {
     const finalPlayer = calculateHandScore(playerHand);
@@ -109,7 +126,6 @@
       gameState = 'dealerBust';
       bankroll += currentBet * 2;
     } else if (finalPlayer > finalDealer) {
-      // Wygrana zwykła lub specyficzny komunikat dla trafionego 21
       gameState = finalPlayer === 21 ? 'got21' : 'playerWin';
       bankroll += currentBet * 2;
     } else if (finalDealer > finalPlayer) {
@@ -123,6 +139,7 @@
   }
 
   function resetForNextRound() {
+    if (isProcessing) return;
     playerHand = [];
     dealerHand = [];
     currentBet = 0;
@@ -141,6 +158,7 @@
     highScore = 1000;
     currentBet = 0;
     gameState = 'betting';
+    isProcessing = false;
   }
 </script>
 
@@ -182,7 +200,7 @@
       <!-- GAME OVER SCREEN -->
       <div 
         in:scale={{ duration: 300, easing: backOut, start: 0.9 }}
-        class="flex flex-col items-center gap-4 bg-[#181818] border-2 border-red-900/60 p-6 sm:p-8 rounded-2xl shadow-2xl max-w-sm w-full animate-fade-in">
+        class="flex flex-col items-center gap-4 bg-[#181818] border-2 border-red-900/60 p-6 sm:p-8 rounded-2xl shadow-2xl max-w-sm w-full">
         <div class="flex flex-col items-center gap-1">
           <span class="text-red-500 font-black text-2xl sm:text-3xl tracking-widest uppercase">BANKRUPT!</span>
           <span class="text-xs text-subtext tracking-wider">You lost all your money</span>
@@ -211,7 +229,8 @@
           {#if gameState === 'betting' && currentBet > 0}
             <button 
               onclick={clearBet} 
-              class="px-2.5 py-1 bg-[#333] hover:bg-red-950/70 hover:text-red-400 text-subtext rounded text-xs font-bold uppercase tracking-wider border border-[#444] transition-colors">
+              disabled={isProcessing}
+              class="px-2.5 py-1 bg-[#333] hover:bg-red-950/70 hover:text-red-400 text-subtext rounded text-xs font-bold uppercase tracking-wider border border-[#444] transition-colors disabled:opacity-50">
               Reset
             </button>
           {/if}
@@ -222,7 +241,7 @@
       {#if ['playerBust', 'dealerBust', 'playerWin', 'dealerWin', 'push', 'blackjack', 'got21'].includes(gameState)}
         <div
           in:scale={{ duration: 250, easing: backOut, start: 0.85 }}
-          class="mt-2 py-2.5 px-8 bg-[#181818] border-2 border-[#444] rounded-lg shadow-2xl animate-fade-in">
+          class="mt-2 py-2.5 px-8 bg-[#181818] border-2 border-[#444] rounded-lg shadow-2xl">
           {#if gameState === 'blackjack'}
             <span class="text-amber-400 text-lg font-black tracking-widest uppercase animate-pulse">★ BLACKJACK! ★</span>
           {:else if gameState === 'got21'}
@@ -295,7 +314,8 @@
               {#each availableChips as chip}
                 <button
                   onclick={() => addChip(chip.value)}
-                  class="w-10 h-10 rounded-full bg-darkbg border-2 border-[#444] hover:border-emerald-500 hover:text-emerald-400 active:scale-95 text-xs font-bold transition-all shadow flex items-center justify-center">
+                  disabled={isProcessing}
+                  class="w-10 h-10 rounded-full bg-darkbg border-2 border-[#444] hover:border-emerald-500 hover:text-emerald-400 active:scale-95 text-xs font-bold transition-all shadow flex items-center justify-center disabled:opacity-50">
                   {chip.label}
                 </button>
               {/each}
@@ -305,7 +325,7 @@
 
         <button 
           onclick={startRound} 
-          disabled={currentBet === 0}
+          disabled={currentBet === 0 || isProcessing}
           class="w-full py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] disabled:opacity-30 disabled:cursor-not-allowed rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
           Deal
         </button>
@@ -313,13 +333,15 @@
       {:else if gameState === 'playing'}
         <div class="flex gap-3 w-full">
           <button 
-            onclick={hit} 
-            class="flex-1 py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
+            onclick={hit}
+            disabled={isProcessing}
+            class="flex-1 py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] disabled:opacity-40 rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
             Hit
           </button>
           <button 
-            onclick={stand} 
-            class="flex-1 py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
+            onclick={() => stand()} 
+            disabled={isProcessing}
+            class="flex-1 py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] disabled:opacity-40 rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
             Stand
           </button>
         </div>
@@ -328,7 +350,8 @@
         <!-- AFTER ROUND -->
         <button 
           onclick={resetForNextRound} 
-          class="w-full py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
+          disabled={isProcessing}
+          class="w-full py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] disabled:opacity-40 rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
           Next Hand
         </button>
       {/if}
