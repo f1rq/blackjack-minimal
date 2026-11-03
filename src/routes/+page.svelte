@@ -45,6 +45,14 @@
     }
   }
 
+  function allIn() {
+    if (gameState !== 'betting' || isProcessing || bankroll <= 0) return;
+    if (bankroll > 0) {
+      currentBet += bankroll;
+      bankroll = 0;
+    }
+  }
+
   function clearBet() {
     if (gameState !== 'betting' || isProcessing) return;
     bankroll += currentBet;
@@ -295,12 +303,24 @@
         <!-- BANKROLL + CHIPS PANEL -->
         <div class="w-full bg-cardbg border border-cardborder rounded-xl p-3 flex flex-col items-center gap-2.5 shadow-md">
           <div class="flex justify-between items-center w-full px-1">
-            <div class="flex flex-col">
+            
+            <div class="flex flex-col flex-1">
               <span class="text-[10px] font-bold tracking-widest text-subtext uppercase">Bankroll</span>
               <span class="text-lg font-bold text-white">{formatMoney(bankroll)}</span>
+            </div>              
+
+            <div class="flex justify-center flex-1">
+              {#if bankroll > 0 && gameState === 'betting'}
+                <button 
+                  onclick={allIn}
+                  disabled={isProcessing}
+                  class="px-2.5 py-1 bg-red-950/60 hover:bg-red-900 text-red-400 hover:text-red-200 rounded text-xs font-bold uppercase tracking-wider border border-red-900/80 transition-colors disabled:opacity-50 shadow">
+                  All In
+                </button>
+              {/if}
             </div>
-            
-            <div class="flex flex-col items-end">
+
+            <div class="flex flex-col items-end flex-1">
               <span class="text-[10px] font-bold tracking-widest text-subtext uppercase">Peak</span>
               <span class="text-xs font-bold text-emerald-400">{formatMoney(highScore)}</span>
             </div>
