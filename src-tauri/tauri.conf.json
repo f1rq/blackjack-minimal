@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "blackjack-minimal",
+        "title": "Minimal Blackjack",
         "width": 800,
         "height": 600
       }
