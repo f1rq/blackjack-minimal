@@ -8,7 +8,7 @@ on:
 
 jobs:
   publish-tauri:
-    permission:
+    permissions:
       contents: write
     strategy:
       fail-fast: false
