@@ -1,4 +1,4 @@
-name: Build & Release Tauri App
+name: Build & Release
 
 on:
   push:
@@ -6,8 +6,11 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  publish-tauri:
+  release:
     permissions:
       contents: write
     strategy:
@@ -15,23 +18,24 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
+            build_args: '--target universal-apple-darwin'
+            asset_label: 'macos-universal'
           - platform: 'ubuntu-22.04'
-            args: ''
+            build_args: ''
+            asset_label: 'linux-x64'
           - platform: 'windows-latest'
-            args: ''
+            build_args: '--no-bundle'
+            asset_label: 'win64'
 
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@v5
+
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: lts/*
+          node-version: 24
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -42,13 +46,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-      
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Install Linux dependencies (Tauri v2)
+      - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
@@ -57,14 +61,43 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Build and create release
+      - name: Build Tauri app
+        run: pnpm tauri build ${{ matrix.build_args }}
+
+      - name: Ad-hoc sign macOS bundle
+        if: matrix.platform == 'macos-latest'
+        run: |
+          APP_PATH=$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name "*.app" | head -n 1)
+          DMG_PATH=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name "*.dmg" | head -n 1)
+          codesign --force --deep --sign - "$APP_PATH"
+          rm -f "$DMG_PATH"
+          hdiutil create -volname "Minimal Blackjack" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"
+
+      - name: Upload macOS & Linux release assets
+        if: matrix.platform != 'windows-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
-          releaseName: 'Blackjack v__VERSION__'
-          releaseBody: 'Pobierz instalator dla swojego systemu z listy poniżej.'
+          releaseName: 'v__VERSION__'
+          releaseBody: ''
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.build_args }}
+          assetNamePattern: 'Minimal-Blackjack-v[version]-${{ matrix.asset_label }}.[ext]'
+
+      - name: Prepare portable Windows executable
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          cp "src-tauri/target/release/blackjack-minimal.exe" "Minimal-Blackjack-v${VERSION}-win64.exe"
+
+      - name: Upload Windows portable executable
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: Minimal-Blackjack-v*-win64.exe
