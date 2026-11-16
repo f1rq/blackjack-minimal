@@ -21,6 +21,12 @@
   let highScore = $state(1000);
   let currentBet = $state(0);
   let gameState = $state<GameState>('betting');
+
+  let canDoubleDown = $derived(
+    gameState === 'playing' &&
+    playerHand.length === 2 &&
+    bankroll >= currentBet
+  );
   
   let isProcessing = $state(false);
 
@@ -125,6 +131,28 @@
     resolveWinner();
     isProcessing = false;
     }
+
+  async function doubleDown() {
+    if (!canDoubleDown || isProcessing) return;
+    isProcessing = true;
+
+    bankroll -= currentBet;
+    currentBet *= 2;
+
+    const newCard = deck.pop()!;
+    playerHand = [...playerHand, newCard];
+
+    await delay(300);
+
+    const currentScore = calculateHandScore(playerHand);
+
+    if (currentScore > 21) {
+      gameState = 'playerBust';
+      isProcessing = false;
+    } else {
+      await stand(true);
+    }
+  }
 
   function resolveWinner() {
     const finalPlayer = calculateHandScore(playerHand);
@@ -364,6 +392,14 @@
             class="flex-1 py-3.5 bg-cardborder hover:bg-[#444444] active:bg-[#555555] disabled:opacity-40 rounded-lg text-sm tracking-widest transition-colors font-bold uppercase shadow">
             Stand
           </button>
+          {#if canDoubleDown}
+            <button
+              onclick={doubleDown}
+              disabled={isProcessing}
+              class="flex-1 py-3.5 bg-amber-950/70 hover:bg-amber-900/80 text-amber-200 border border-amber-700/60 active:scale-95 disabled:opacity-40 rounded-lg text-sm tracking-widest transition-all font-bold uppercase shadow">
+              Double
+            </button>
+          {/if}
         </div>
 
       {:else if gameState !== 'gameOver'}
