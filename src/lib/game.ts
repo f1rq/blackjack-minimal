@@ -97,3 +97,41 @@ export function formatMoney(amount: number): string {
 }
 
 export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const STORAGE_KEYS = {
+  BANKROLL: 'bj_bankroll',
+  RUN_PEAK: 'bj_run_peak',
+  ALL_TIME_PEAK: 'bj_all_time_peak'
+};
+
+export interface SavedGameState {
+  bankroll: number;
+  runPeak: number;
+  allTimePeak: number;
+}
+
+export function loadSavedState(): SavedGameState {
+  if (typeof localStorage === 'undefined') {
+    return { bankroll: 1000, runPeak: 1000, allTimePeak: 1000 };
+  }
+
+  const parseValue = (key: string, fallback: number) => {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    const parsed = Number(raw);
+    return Number.isNaN(parsed) ? fallback : parsed;
+  };
+
+  const bankroll = parseValue(STORAGE_KEYS.BANKROLL, 1000);
+  const runPeak = parseValue(STORAGE_KEYS.RUN_PEAK, Math.max(1000, bankroll));
+  const allTimePeak = parseValue(STORAGE_KEYS.ALL_TIME_PEAK, Math.max(1000, runPeak));
+
+  return { bankroll, runPeak, allTimePeak };
+}
+
+export function saveGameProgress(bankroll: number, runPeak: number, allTimePeak: number): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(STORAGE_KEYS.BANKROLL, String(bankroll));
+  localStorage.setItem(STORAGE_KEYS.RUN_PEAK, String(runPeak));
+  localStorage.setItem(STORAGE_KEYS.ALL_TIME_PEAK, String(allTimePeak));
+}

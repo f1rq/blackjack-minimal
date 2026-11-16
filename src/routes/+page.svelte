@@ -9,18 +9,37 @@
     formatMoney, 
     ALL_CHIPS, 
     delay,
+    loadSavedState,
+    saveGameProgress,
     type Card, 
     type GameState 
   } from '../lib/game';
+
+  const initialData = loadSavedState();
 
   let deck = $state<Card[]>([]);
   let playerHand = $state<Card[]>([]);
   let dealerHand = $state<Card[]>([]);
   
-  let bankroll = $state(1000);
-  let highScore = $state(1000);
+  let bankroll = $state(initialData.bankroll);
+  let runPeak = $state(initialData.runPeak);
+  let allTimePeak = $state(initialData.allTimePeak);
+  let isNewAllTimeRecord = $state(false);
+
   let currentBet = $state(0);
-  let gameState = $state<GameState>('betting');
+  let gameState = $state<GameState>(initialData.bankroll <= 0 ? 'gameOver' : 'betting');
+  let isProcessing = $state(false);
+
+  function syncFinancialRecords() {
+    if (bankroll > runPeak) {
+      runPeak = bankroll;
+    }
+    if (bankroll > allTimePeak) {
+      allTimePeak = bankroll;
+      isNewAllTimeRecord = true;
+    }
+    saveGameProgress(bankroll, runPeak, allTimePeak);
+  }
 
   let canDoubleDown = $derived(
     gameState === 'playing' &&
@@ -28,16 +47,8 @@
     bankroll >= currentBet
   );
   
-  let isProcessing = $state(false);
-
   let playerScore = $derived(calculateHandScore(playerHand));
   let dealerScore = $derived(calculateHandScore(dealerHand));
-
-  function updateHighScore() {
-    if (bankroll > highScore) {
-      highScore = bankroll;
-    }
-  }
 
   let availableChips = $derived(
     ALL_CHIPS.filter(chip => chip.value <= bankroll)
@@ -53,10 +64,8 @@
 
   function allIn() {
     if (gameState !== 'betting' || isProcessing || bankroll <= 0) return;
-    if (bankroll > 0) {
-      currentBet += bankroll;
-      bankroll = 0;
-    }
+    currentBet += bankroll;
+    bankroll = 0;
   }
 
   function clearBet() {
@@ -86,7 +95,7 @@
         gameState = 'blackjack';
         bankroll += Math.floor(currentBet * 2.5);
       }
-      updateHighScore();
+      syncFinancialRecords();
     }
     
     isProcessing = false;
@@ -103,6 +112,7 @@
 
     if (currentScore > 21) {
       gameState = 'playerBust';
+      syncFinancialRecords();
       isProcessing = false;
     } else if (currentScore === 21) {  
       await stand(true);
@@ -130,7 +140,7 @@
 
     resolveWinner();
     isProcessing = false;
-    }
+  }
 
   async function doubleDown() {
     if (!canDoubleDown || isProcessing) return;
@@ -148,6 +158,7 @@
 
     if (currentScore > 21) {
       gameState = 'playerBust';
+      syncFinancialRecords();
       isProcessing = false;
     } else {
       await stand(true);
@@ -171,7 +182,7 @@
       bankroll += currentBet;
     }
 
-    updateHighScore();
+    syncFinancialRecords();
   }
 
   function resetForNextRound() {
@@ -191,10 +202,12 @@
     playerHand = [];
     dealerHand = [];
     bankroll = 1000;
-    highScore = 1000;
+    runPeak = 1000;
+    isNewAllTimeRecord = false;
     currentBet = 0;
     gameState = 'betting';
     isProcessing = false;
+    saveGameProgress(1000, 1000, allTimePeak);
   }
 </script>
 
@@ -242,9 +255,20 @@
           <span class="text-xs text-subtext tracking-wider">You lost all your money</span>
         </div>
 
-        <div class="w-full bg-[#121212] border border-[#2a2a2a] rounded-lg p-3 flex flex-col items-center gap-1">
-          <span class="text-[10px] font-bold text-subtext uppercase tracking-widest">All-Time Peak</span>
-          <span class="text-emerald-400 font-extrabold text-xl">{formatMoney(highScore)}</span>
+        <div class="grid grid-cols-2 gap-2.5 w-full">
+          <div class="bg-[#121212] border border-[#2a2a2a] rounded-lg p-3 flex flex-col items-center justify-center gap-1">
+            <span class="text-[10px] font-bold text-subtext uppercase tracking-widest">Run Peak</span>
+            <span class="text-white font-extrabold text-lg">{formatMoney(runPeak)}</span>
+          </div>
+
+          <div class="bg-[#121212] border {isNewAllTimeRecord ? 'border-amber-500/50' : 'border-[#2a2a2a]'} rounded-lg p-3 flex flex-col items-center justify-center gap-1 relative">
+            {#if isNewAllTimeRecord}
+              <span class="text-[9px] font-black text-amber-400 uppercase tracking-widest">New Record!</span>
+            {:else}
+              <span class="text-[10px] font-bold text-subtext uppercase tracking-widest">All-Time</span>
+            {/if}
+            <span class="text-emerald-400 font-extrabold text-lg">{formatMoney(allTimePeak)}</span>
+          </div>
         </div>
 
         <button 
@@ -338,7 +362,7 @@
             </div>              
 
             <div class="flex justify-center flex-1">
-              {#if bankroll > 0 && gameState === 'betting'}
+              {#if bankroll > 0}
                 <button 
                   onclick={allIn}
                   disabled={isProcessing}
@@ -348,10 +372,17 @@
               {/if}
             </div>
 
-            <div class="flex flex-col items-end flex-1">
-              <span class="text-[10px] font-bold tracking-widest text-subtext uppercase">Peak</span>
-              <span class="text-xs font-bold text-emerald-400">{formatMoney(highScore)}</span>
+            <div class="flex flex-col items-end flex-1 gap-0.5">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] font-bold tracking-widest text-subtext uppercase">Run</span>
+                <span class="text-xs font-bold text-white">{formatMoney(runPeak)}</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] font-bold tracking-widest text-subtext uppercase">Best</span>
+                <span class="text-xs font-bold text-emerald-400">{formatMoney(allTimePeak)}</span>
+              </div>
             </div>
+
           </div>
 
           <!-- CHIPS SELECTOR -->
